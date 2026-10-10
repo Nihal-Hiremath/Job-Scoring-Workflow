@@ -1,0 +1,607 @@
+{
+  "name": "Job Scrapper - python",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 13
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1392,
+        80
+      ],
+      "id": "3b51c3e6-7a4f-468b-a3f9-afab3e03cd0f",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"aiEmploymentTypeFilter\": [\"FULL_TIME\"],\n  \"aiHasSalary\": false,\n  \"aiVisaSponsorshipFilter\": false,\n  \"directApply\": false,\n  \"noDirectApply\": true,\n  \"excludeATSDuplicate\": true,\n  \"recruiterOnly\": false,\n  \"remote\": false,\n  \"removeAgency\": true,\n  \"timeRange\": \"24h\",\n  \"limit\": 100,\n  \"locationSearch\": [\"Germany\"],\n  \"titleSearch\": [\n    \"Data Engineer\",\n    \"Analytics Engineer\",\n    \"Data Analyst\",\n    \"Business Analyst\",\n    \"Business Intelligence\",\n    \"Data Scientist\",\n    \"Data Warehouse\",\n    \"Data & AI\",\n    \"AI & Data\",\n    \"Data and AI\",\n    \"AI and Data\",\n    \"Data & Analytics\",\n    \"Data Management\",\n    \"Data Architect\",\n    \"Data Architecture\",\n    \"Data Governance\",\n    \"AI Engineer\",\n    \"AI Developer\",\n    \"AI System\",\n    \"ML Engineer\",\n    \"Machine Learning Engineer\",\n    \"Machine Learning\",\n    \"AI/ML\",\n    \"LLM Engineer\",\n    \"Prompt Engineer\",\n    \"AI Evaluation\",\n    \"Intelligent Automation\",\n    \"Automation Engineer\",\n    \"Workflow Engineer\",\n    \"BI Analyst\",\n    \"BI Developer\",\n    \"BI\",\n    \"Data Consultant\",\n    \"AI Data Platform\",\n    \"AI Architect\",\n    \"AI Systems Engineer\",\n    \"Claude\",\n    \"AI Venture\",\n    \"AI Research\",\n    \"Agentic AI\",\n    \"AI Transformation\"\n  ],\n  \"titleExclusionSearch\": [\n    \"Werkstudent\",\n    \"Praktikum\",\n    \"Praktikant\",\n    \"Intern\",\n    \"Duales Studium\",\n    \"Internship\",\n    \"Working Student\",\n    \"Director\",\n    \"Student\",\n    \"Manager\",\n    \"Lead\",\n    \"Head of\",\n    \"Principal\",\n    \"SAP MDM\",\n    \"SAP MDG\",\n    \"SAP Master Data\",\n    \"Contact Center\",\n    \"Robotics\",\n    \"Upskilling\",\n    \"Wiedereinstieg\",\n    \"Co-Founder\",\n    \"Graduate Program\",\n    \"Masterand\",\n    \"Referent\",\n    \"Thesis\"\n  ]\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1184,
+        80
+      ],
+      "id": "47b437ce-913d-4b01-930d-da83baef7bd1",
+      "name": "Scrape All Jobs"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-haiku-4-5-20251001\",\n  \"max_tokens\": 1500,\n  \"system\": \"={{ $json.system_prompt_escaped }}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"={{ $json.prompt_escaped }}\"\n    }\n  ]\n}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 2,
+              "batchInterval": 3000
+            }
+          },
+          "timeout": 100000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -528,
+        16
+      ],
+      "id": "9f6b4698-5da2-4f6f-89f0-750706fefad1",
+      "name": "Score with Claude",
+      "retryOnFail": false,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "pythonNative",
+        "pythonCode": "j = _item[\"json\"]\n\n# Extract text from Claude's response\ntext = \"\"\ncontent = j.get(\"content\", [])\nif isinstance(content, list) and len(content) > 0:\n    text = content[0].get(\"text\", \"\")\n\nclean = text.strip()\nif clean.startswith(\"```\"):\n    lines = clean.split(\"\\n\")\n    lines = lines[1:-1]\n    clean = \"\\n\".join(lines)\n\ndef extract_value(text, key):\n    search = '\"' + key + '\":'\n    idx = text.find(search)\n    if idx == -1:\n        return None\n    start = idx + len(search)\n    rest = text[start:].strip()\n    if rest.startswith('\"'):\n        end = rest.find('\"', 1)\n        return rest[1:end]\n    elif rest.startswith('['):\n        end = rest.find(']')\n        arr_str = rest[1:end]\n        items_list = [x.strip().strip('\"') for x in arr_str.split(',') if x.strip()]\n        return \", \".join(items_list)\n    elif rest.startswith('true'):\n        return True\n    elif rest.startswith('false'):\n        return False\n    else:\n        end = 0\n        while end < len(rest) and rest[end] not in [',', '}', '\\n']:\n            end += 1\n        val = rest[:end].strip()\n        try:\n            return int(val)\n        except:\n            return val\n\nreturn {\"json\": {\n    \"linkedin_id\":          extract_value(clean, \"linkedin_id\"),\n    \"score\":                extract_value(clean, \"score\"),\n    \"reason\":               extract_value(clean, \"reason\"),\n    \"matched_skills\":       extract_value(clean, \"matched_skills\"),\n    \"missing_skills\":       extract_value(clean, \"missing_skills\"),\n    \"experience_required\":  extract_value(clean, \"experience_required\"),\n    \"german_required\":      extract_value(clean, \"german_required\"),\n    \"job_type_flag\":        extract_value(clean, \"job_type_flag\"),\n    \"apply_recommendation\": extract_value(clean, \"apply_recommendation\"),\n}}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        16
+      ],
+      "id": "51f0ef8b-9701-4170-95de-a21f914bef11",
+      "name": "Parse Claude Response"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "pythonNative",
+        "pythonCode": "# ── Single item (Run Once for Each Item mode) ─────────────────────────────\nj = _item[\"json\"]\n\n# ── Helpers ────────────────────────────────────────────────────────────────\ndef extract_city(j):\n    derived = j.get(\"cities_derived\", [])\n    if isinstance(derived, list) and len(derived) > 0:\n        return derived[0]\n    locs = j.get(\"locations_derived\", [])\n    if isinstance(locs, list) and len(locs) > 0:\n        return locs[0]\n    return \"\"\n\ndef safe_str(val):\n    return str(val) if val is not None else \"\"\n\n# ── Capture only what we need ──────────────────────────────────────────────\nnormalized = {\n    # Identity\n    \"job_id\":           safe_str(j.get(\"id\", \"\")),\n    \"linkedin_id\":      safe_str(j.get(\"linkedin_id\", \"\")),\n    \"title\":            j.get(\"title\", \"\"),\n    \"url\":              j.get(\"url\", \"\"),\n    \"date_posted\":      j.get(\"date_posted\", \"\"),\n\n    # Company\n    \"organization\":     j.get(\"organization\", \"\"),\n    \"organization_url\": j.get(\"organization_url\", \"\"),\n    \"industry\":         j.get(\"org_linkedin_industry\", \"\"),\n    \"company_size\":     j.get(\"org_linkedin_size\", \"\"),\n\n    # Location\n    \"city\":             extract_city(j),\n\n    # Job metadata\n    \"seniority\":        j.get(\"seniority\", \"\"),\n    \"work_arrangement\": j.get(\"ai_work_arrangement\", \"\"),\n    \"job_language\":     j.get(\"ai_job_language\", \"\"),\n    \"visa_sponsorship\": j.get(\"ai_visa_sponsorship\", False),\n    \"direct_apply\":     j.get(\"direct_apply\", False),\n\n    # Salary\n    \"salary_currency\":  j.get(\"ai_salary_currency\", \"\"),\n    \"salary_min\":       j.get(\"ai_salary_min_value\", None),\n    \"salary_max\":       j.get(\"ai_salary_max_value\", None),\n    \"salary_unit\":      j.get(\"ai_salary_unit_text\", \"\"),\n\n    # Recruiter\n    \"recruiter_name\":   j.get(\"recruiter_name\", \"\"),\n    \"recruiter_url\":    j.get(\"recruiter_url\", \"\"),\n\n    # Full raw JD — no truncation\n    \"description_text\": j.get(\"description_text\", \"\") or \"\",\n}\n\n# ── Build Claude user message ──────────────────────────────────────────────\nprompt = (\n    \"## JOB POSTING TO EVALUATE\\n\\n\"\n    \"LinkedIn ID: \"      + safe_str(normalized[\"linkedin_id\"])      + \"\\n\"\n    \"Title: \"            + safe_str(normalized[\"title\"])            + \"\\n\"\n    \"Company: \"          + safe_str(normalized[\"organization\"])     + \"\\n\"\n    \"Industry: \"         + safe_str(normalized[\"industry\"])         + \"\\n\"\n    \"Company Size: \"     + safe_str(normalized[\"company_size\"])     + \"\\n\"\n    \"Location: \"         + safe_str(normalized[\"city\"])             + \"\\n\"\n    \"Work Arrangement: \" + safe_str(normalized[\"work_arrangement\"]) + \"\\n\"\n    \"Seniority: \"        + safe_str(normalized[\"seniority\"])        + \"\\n\"\n    \"Job Language: \"     + safe_str(normalized[\"job_language\"])     + \"\\n\"\n    \"Visa Sponsorship: \" + safe_str(normalized[\"visa_sponsorship\"]) + \"\\n\\n\"\n    \"## FULL JOB DESCRIPTION\\n\"\n    + safe_str(normalized[\"description_text\"])\n    + \"\\n\\n---\\n\\n\"\n    \"Respond ONLY with valid JSON, no markdown, no explanation outside the JSON:\\n\"\n    '{\"linkedin_id\": \"<exact LinkedIn ID value from the input above — copy it exactly, do not modify or omit>\", '\n    '\"score\": <integer 1-10>, \"reason\": \"<REQUIRED: 2-3 sentences explaining the score — never omit this field>\", '\n    '\"matched_skills\": [\"skill1\"], \"missing_skills\": [\"skill1\"], '\n    '\"experience_required\": \"<exact years if stated in JD, else not specified>\", '\n    '\"german_required\": <true/false>, '\n    '\"job_type_flag\": \"<fulltime/parttime/internship/werkstudent/unclear>\", '\n    '\"apply_recommendation\": <true/false>}'\n)\nnormalized[\"prompt\"] = prompt\n\n# ── Job snapshot passed to Sheets node ────────────────────────────────────\nnormalized[\"job_snapshot\"] = {\n    \"job_id\":           normalized[\"job_id\"],\n    \"linkedin_id\":      normalized[\"linkedin_id\"],\n    \"title\":            normalized[\"title\"],\n    \"url\":              normalized[\"url\"],\n    \"date_posted\":      normalized[\"date_posted\"],\n    \"organization\":     normalized[\"organization\"],\n    \"organization_url\": normalized[\"organization_url\"],\n    \"industry\":         normalized[\"industry\"],\n    \"company_size\":     normalized[\"company_size\"],\n    \"city\":             normalized[\"city\"],\n    \"seniority\":        normalized[\"seniority\"],\n    \"work_arrangement\": normalized[\"work_arrangement\"],\n    \"job_language\":     normalized[\"job_language\"],\n    \"visa_sponsorship\": normalized[\"visa_sponsorship\"],\n    \"direct_apply\":     normalized[\"direct_apply\"],\n    \"salary_currency\":  normalized[\"salary_currency\"],\n    \"salary_min\":       normalized[\"salary_min\"],\n    \"salary_max\":       normalized[\"salary_max\"],\n    \"salary_unit\":      normalized[\"salary_unit\"],\n    \"recruiter_name\":   normalized[\"recruiter_name\"],\n    \"recruiter_url\":    normalized[\"recruiter_url\"],\n}\n\nnormalized[\"system_prompt\"] = \"\"\"You are a job-fit evaluator for Nihal Hiremath, a Data & AI Automation Engineer based in Berlin, Germany, immediately available for full-time roles.\n\n## CANDIDATE PROFILE\n\n**Name:** Nihal Hiremath\n**Title:** Data & AI Automation Engineer\n**Total Experience:** 3 years\n**Location:** Berlin, Germany\n**Availability:** Immediate\n**Languages:** English (C2 — fluent), German (A2 → B1 in progress)\n\n---\n\n### Work Experience\n\n**Growth Pilot Partners — AI Automation Engineer** (June 2025 – June 2026)\n- Worked in an early startup, building custom AI agents and automating business processes using n8n, eliminating repetitive manual tasks and delivering production-ready workflows tailored to client requirements..\n- Scraped and qualified 8,000+ leads per client across 7 clients using n8n, Apify, and Python web scraping; designed an AI workflow to analyze prospect LinkedIn profiles and generate personalized cold outreach via LinkedIn and email, resulting in higher conversion rates.\n- Built and sold n8n AI workflows such as Automated Sales Meeting Prep, Sales Call Analyzer, AI Customer Churn Predictor, Automated LinkedIn DM System, AI Lead Qualification and Sales Pipeline Automation.\n- Migrated and cleaned a 2,000-contact CRM on GoHighLevel/HubSpot, rebuilding opportunity pipelines and reactivating dormant clients through automated follow-up sequences.\n- Researched emerging GenAI and agentic workflow trends; built a weekly automated agent that scans new AI tool releases and evaluates fit for client needs.\n- Building a post-call intelligence pipeline that captures call transcripts, stores them in Google Drive, and connects to a Telegram bot enabling natural language Q&A on prospect call history using LLM-based context retrieval.\n- Continuously improved existing workflows to enhance AI model accuracy and handle edge cases from varying input parameters.\n\n**Tata Consultancy Services, Bangalore — Associate Data Engineer** (Nov 2021 – Feb 2024)\n- Built and maintained 10+ API pipelines and message interfaces handling SWIFT transaction flows across 15 message types for Emirates NBD's banking application.\n- Developed ETL processes for ingestion, transformation and validation of SWIFT messages ensuring compliance with banking standards across 7-8 regional deployments.\n- Engineered REST API interfaces with SpringBoot specifications enabling reliable inter-bank message routing between ENBD, correspondent banks and governing agencies.\n- Wrote SQL scripts to extract and validate transactional values flowing through message pipelines, ensuring data accuracy across SWIFT message types.\n- Parsed and processed incoming SWIFT messages in JSON format, automating schema mapping and data formatting aligned with ENBD's business requirements.\n- Created Power BI dashboards to visualize pipeline KPIs and support data-driven performance monitoring.\n\n**TVS Motors, Hosur — New Product Development Engineer** (Jan 2021 – Oct 2021)\n- Conducted comprehensive market research on competitors including Honda, Yamaha, and Bajaj; evaluated over 15 new product features to identify key innovations impacting customer satisfaction.\n- Compiled and delivered weekly analysis reports on competitor pricing strategies and market share trends.\n- Developed and maintained daily manufacturing dashboards tracking key production KPIs including scooters produced, line efficiency, defect rate, downtime, and business-specific KPIs.\n\n---\n\n### Education\n\n**University of Europe for Applied Sciences — MSc Data Science** (Graduated Jan 2026, 82%)\nThesis: Speech Emotion Recognition from Voice Data using Wav2Vec2 Transformers — built an emotion classification model achieving 98% accuracy using Python, HuggingFace, and TensorFlow.\n\n**RNS Institute of Technology — BEng Mechanical Engineering** (Graduated Oct 2020)\n\n---\n\n### Skills\n\n**Key Skills:** Data collection, data cleaning, trend identification, pattern recognition, KPI tracking, database management, data-driven decision making, ETL, data governance, data warehousing, data lakes, Data Scraping, Data Architecture, Feature Engineering, Data Analysis, Insights Generation, Business Analysis, \n\n**Programming Languages:** Python, R, SQL, Java\n\n**Big Data Technologies:** Apache Spark, Kafka, Airflow, Databricks, Snowflake, dbt, Hadoop\n\n**Visualization Technologies:** Power BI (DAX), Tableau, MS Excel, Plotly, Seaborn, Matplotlib\n\n**Cloud Services:** Amazon AWS, Google Cloud Services (GCP), Azure\n\n**AI/ML Tools:** Scikit-learn, TensorFlow, PyTorch, LLMs, RAG, Vector Databases, LangChain, LangGraph, NLP, Hands-On Machine Learning Models\n\n**AI Automation Tools:** n8n, Apify, GoHighLevel, Zapier, Agentic AI, SAP AI Core, Joule Studio\n\n---\n\n### Projects\n\nData Science and Machine Learning Projects:\n- E-Commerce Product Delivery Prediction: Built and compared 4 classification models (Random Forest, Decision Tree, Logistic Regression, KNN) in Python to predict on-time delivery from 11K+ order records. Applied label encoding, GridSearchCV hyperparameter tuning, and evaluated performance using accuracy, precision, recall, and confusion matrix.\n- Image Recognition using TensorFlow: Built a CNN-based image classifier in TensorFlow/Keras to categorize 3,600+ flower images across 5 classes. Applied data augmentation (flipping, rotation) and Conv2D/MaxPooling layers to improve generalization and training accuracy.\n\nData Pipeline Projects:\n- Ingested raw sales CSV data into Snowflake using Python, transformed with dbt, orchestrated with Airflow, visualized in Power BI.\n\nn8n Projects:\n- AI Customer Churn Predictor: Webhook (CRM/task trigger) → GPT (o3) analyzes client health data, predicts churn risk with immediate/short/long-term actions → logs to Airtable → urgent email to team\n- Job Application Automation Pipeline (automated & reduced my everyday task by 2 hours): Apify scrapes LinkedIn → Python node normalizes data → Claude API scores fit and flags German requirement from JD → loads to Supabase → weekly results reviewed in Power BI\n\n---\n\n## SCORING RULES\n\n### INSTANT SCORE 1 — discard immediately if ANY of these are true:\n1. Job explicitly states 5+ years minimum experience using exact phrasing (\"5+ years\", \"minimum 5 years\", \"at least 6 years\", \"mindestens 5 Jahre\"). Vague phrases like \"several years\", \"solid experience\", \"proven experience\", \"mehrjahrige Erfahrung\" do NOT trigger this rule.\n2. Job is Werkstudent, internship, Praktikum, Ausbildung, Duales Studium, or part-time. Infer from keywords if not stated: Vollzeit = ok, Teilzeit / Minijob / Studentenjob / Werkstudent / Praktikum = discard.\n3. Job is completely unrelated to Data, AI, Analytics, or Automation — for example: SAP MDM/MDG consulting, contact center operations, robotics/embedded systems, insurance operations consulting, or military/defense analysis.\n\n### SCORING GUIDE\n- 9-10: Strong match — 70%+ required skills match, experience level fits, role title aligns directly\n- 7-8: Good match — 50-70% skill match, minor gaps closeable with resume tailoring\n- 5-6: Partial match — role is relevant but skill gaps exist; worth applying with a tailored resume\n- 3-4: Weak match — role tangentially related, major gaps\n- 1-2: Poor match or instant discard triggered\n\n### RULES — READ CAREFULLY\n\n- CRITICAL: German language requirement MUST NOT affect the score under any circumstances. Even if German is stated as \"Voraussetzung\", \"erforderlich\", \"Pflicht\", \"C1\", \"C2\", \"Verhandlungssicher\", or \"prerequisite\", the score must reflect ONLY the technical and experience fit. A job with C1 German required and perfect technical match should score 8-9, not 1-2. The german_required flag is the ONLY place where German requirement is captured.\n- Do NOT penalize for German-language job postings — posting language is irrelevant to scoring\n- Do NOT use the Seniority metadata field to judge experience requirements — only use what is explicitly written in the full job description text\n- Do NOT penalize for junior or entry-level roles — candidate is open to applying at any level\n- DO note if German is required in the reason field, but do NOT lower the score — the german_required field handles this separately\n- Set german_required: true ONLY if the JD explicitly states a German language requirement with a specific level or mandatory phrasing such as: C1, C2, B2, Fliessend, Verhandlungssicher, Deutsch in Wort und Schrift, Sehr gute Deutschkenntnisse, fluent German, business fluent German. A job being posted in German does NOT make german_required true. If no explicit requirement is found anywhere in the full JD text, set german_required: false.\n- The \"reason\" field is REQUIRED in every response. Never return null or omit it. Always write 2-3 sentences explaining the score based on technical fit.\n- DO consider transferable skills strongly — SQL, Python, ETL, Power BI, data pipelines, KPI tracking transfer directly to controlling, analytics, BI, and finance analyst roles\n- DO consider tool equivalence — dbt to Dataform, Snowflake to BigQuery, Airflow to any orchestrator, n8n to workflow/integration engineering roles\n- DO give full credit for the MSc Data Science thesis (NLP/ML depth, Transformers, HuggingFace, 98% accuracy)\n- DO treat GitHub projects as real hands-on evidence — dbt + Snowflake + Airflow pipeline and AWS microservices CI/CD directly support Data Engineering role claims\n- DO consider that GPP role title is AI Automation Engineer and the actual work is building production AI agents, agentic pipelines, and LLM-powered workflows using n8n and Claude API\"\"\"\n\nnormalized[\"prompt_escaped\"] = normalized[\"prompt\"].replace(\"\\\\\", \"\\\\\\\\\").replace('\"', '\\\\\"').replace(\"\\n\", \"\\\\n\").replace(\"\\r\", \"\\\\r\").replace(\"\\t\", \"\\\\t\")\nnormalized[\"system_prompt_escaped\"] = normalized[\"system_prompt\"].replace(\"\\\\\", \"\\\\\\\\\").replace('\"', '\\\\\"').replace(\"\\n\", \"\\\\n\").replace(\"\\r\", \"\\\\r\").replace(\"\\t\", \"\\\\t\")\n\nreturn {\"json\": normalized}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        80
+      ],
+      "id": "7ad25561-b9e7-491c-a76b-72edb98fd23c",
+      "name": "Set Resume - python code"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "raw_job_postings",
+          "mode": "list",
+          "cachedResultName": "raw_job_postings"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ai_visa_sponsorship": "={{ $json.ai_visa_sponsorship }}",
+            "id": "={{ $json.id }}",
+            "linkedin_id": "={{ $json.linkedin_id }}",
+            "date_posted": "={{ $json.date_posted }}",
+            "date_created": "={{ $json.date_created }}",
+            "title": "={{ $json.title }}",
+            "organization": "={{ $json.organization }}",
+            "org_linkedin_industry": "={{ $json.org_linkedin_industry }}",
+            "location": "={{ $json.locations[0].address.addressLocality }}",
+            "employment_type": "={{ $json.employment_type }}",
+            "date_valid_through": "={{ $json.date_valid_through }}",
+            "url": "={{ $json.url }}",
+            "seniority": "={{ $json.seniority }}",
+            "ai_key_skills": "={{ $json.ai_key_skills }}",
+            "ai_hiring_manager_name": "={{ $json.ai_hiring_manager_name }}",
+            "ai_hiring_manager_email_address": "={{ $json.ai_hiring_manager_email_address }}",
+            "ai_core_responsibilities": "={{ $json.ai_core_responsibilities }}",
+            "ai_requirements_summary": "={{ $json.ai_requirements_summary }}",
+            "ai_job_language": "={{ $json.ai_job_language }}",
+            "ai_keywords": "={{ $json.ai_keywords }}",
+            "description_text": "={{ $json.description_text }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "linkedin_id",
+              "displayName": "linkedin_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date_posted",
+              "displayName": "date_posted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_created",
+              "displayName": "date_created",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "organization",
+              "displayName": "organization",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "org_linkedin_industry",
+              "displayName": "org_linkedin_industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "employment_type",
+              "displayName": "employment_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_valid_through",
+              "displayName": "date_valid_through",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "seniority",
+              "displayName": "seniority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_key_skills",
+              "displayName": "ai_key_skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "array",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_hiring_manager_name",
+              "displayName": "ai_hiring_manager_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_hiring_manager_email_address",
+              "displayName": "ai_hiring_manager_email_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_core_responsibilities",
+              "displayName": "ai_core_responsibilities",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_requirements_summary",
+              "displayName": "ai_requirements_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_job_language",
+              "displayName": "ai_job_language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_visa_sponsorship",
+              "displayName": "ai_visa_sponsorship",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_keywords",
+              "displayName": "ai_keywords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "array",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description_text",
+              "displayName": "description_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scraped_at",
+              "displayName": "scraped_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -912,
+        448
+      ],
+      "id": "659e2565-261b-4004-b207-69bb87861d9c",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "MRZkjo0JbAH5yYvv",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "job_scores",
+          "mode": "list",
+          "cachedResultName": "job_scores"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "german_required": "={{ $json.german_required }}",
+            "apply_recommendation": "={{ $json.apply_recommendation }}",
+            "linkedin_id": "={{ $json.linkedin_id }}",
+            "score": "={{ $json.score }}",
+            "reason": "={{ $json.reason }}",
+            "matched_skills": "={{ $json.matched_skills }}",
+            "missing_skills": "={{ $json.missing_skills }}",
+            "experience_required": "={{ $json.experience_required }}",
+            "job_type_flag": "={{ $json.job_type_flag }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "row_id",
+              "displayName": "row_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "linkedin_id",
+              "displayName": "linkedin_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "matched_skills",
+              "displayName": "matched_skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "missing_skills",
+              "displayName": "missing_skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "experience_required",
+              "displayName": "experience_required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "german_required",
+              "displayName": "german_required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_type_flag",
+              "displayName": "job_type_flag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "apply_recommendation",
+              "displayName": "apply_recommendation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scored_at",
+              "displayName": "scored_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ea1cf6a6-af00-491f-9ac6-adc1b1b44424",
+      "name": "Insert rows in a table1",
+      "credentials": {
+        "postgres": {
+          "id": "MRZkjo0JbAH5yYvv",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Scrape All Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape All Jobs": {
+      "main": [
+        [
+          {
+            "node": "Set Resume - python code",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score with Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Resume - python code": {
+      "main": [
+        [
+          {
+            "node": "Score with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "214df459-3196-4751-9470-4e9c798ccf89",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b38ca4e5f9933bfb644538d49868fe7784395d53595405f66710e9638b113630"
+  },
+  "nodeGroups": [],
+  "id": "w6njCPwk06TFPdvt",
+  "tags": []
+}
