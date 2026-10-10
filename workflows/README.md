@@ -4,6 +4,8 @@ An n8n workflow that scrapes new LinkedIn job postings in Germany every day, sco
 
 It replaced about 2 hours of manual job searching per day.
 
+![n8n workflow canvas](workflow.png)
+
 ## How it works
 
 ```mermaid
